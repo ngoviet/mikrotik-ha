@@ -4,7 +4,13 @@ Fork of [`tomaae/homeassistant-mikrotik_router`](https://github.com/tomaae/homea
 
 ## Project overview
 
-HACS custom integration to monitor and control MikroTik RouterOS devices from Home Assistant. Supports RouterOS v6.43+ / v7.1+ and HA 2024.3+. Distributed as a HACS zip release.
+HACS custom integration to monitor and control MikroTik RouterOS devices from Home Assistant. Supports RouterOS v6.43+ / v7.1+ and HA 2024.3+. Tested with **HA 2026.4.4**. Distributed as a HACS zip release.
+
+### Environment
+- **User's HA**: 192.168.10.15, HA 2026.4.4
+- **User's MikroTik**: 192.168.10.1, RouterOS identity "MikroTik"
+- **API ports**: 8511 (non-SSL API), 8729 (SSL API — TLS handshake issues with Python 3.14)
+- **GitHub**: ngoviet/mikrotik-ha, dev branch: `dev/ngoviet-fixes`
 
 ### Platforms (6)
 `sensor`, `binary_sensor`, `device_tracker`, `switch`, `button`, `update`
@@ -102,17 +108,27 @@ pytest
 
 ## Known bugs — high priority
 
-| File | Issue |
-|------|-------|
-| `mikrotikapi.py:124-230` | **Reentrant lock deadlock**: `query()` acquires `threading.Lock`, calls `connection_check()` → `connect()` which tries to acquire the same lock. Use `threading.RLock()`. |
-| `coordinator.py:153-204` | **Shared mutable state race**: Both coordinators write to `coordinator.ds["host"]` without synchronization (30s vs 10s timers). |
-| `update.py:144` | **Crash**: `self.data["routerboard"]` should be `self.coordinator.data["routerboard"]`. `self.data` does not exist on the entity class. |
-| `update.py:181-209` | **Infinite loop risk**: `generate_version_list` + `decrement_version` iterates every micro version between two RouterOS versions. From 7.x to 6.x this generates millions of iterations. |
-| `device_tracker.py:196,211` | **TypeError**: `utcnow() - self._data["last-seen"]` crashes when `last-seen` is `False` (initial state). |
-| `switch.py:149,171` | **KeyError**: `self._data["about"]` raises when the `about` field is missing from the interface data dict. |
-| `button.py:60` | **Blocking call in async**: `self.coordinator.api.run_script()` is synchronous, blocks event loop. |
+| File | Issue | Status |
+|------|-------|--------|
+| `mikrotikapi.py:119` | **librouteros v4 API**: `login_methods` (string) removed; v4 uses `login_method` (callable). Removed param entirely. | Fixed v1.0.1 |
+| `config_flow.py:176` | **HA 2026.4 OptionsFlow**: `config_entry` is now a read-only property; `self.config_entry = config_entry` raises `AttributeError`. Moved to `self._config_entry`. | Fixed v1.0.2 |
+| `mikrotikapi.py:124-230` | **Reentrant lock deadlock**: `query()` acquires `threading.Lock`, calls `connection_check()` → `connect()` which tries to acquire the same lock. Use `threading.RLock()`. | Fixed v1.0.0 |
+| `coordinator.py:153-204` | **Shared mutable state race**: Both coordinators write to `coordinator.ds["host"]` without synchronization (30s vs 10s timers). | Fixed v1.0.0 |
+| `update.py:144` | **Crash**: `self.data["routerboard"]` should be `self.coordinator.data["routerboard"]`. | Fixed v1.0.0 |
+| `update.py:181-209` | **Infinite loop risk**: `generate_version_list` + `decrement_version` iterates every micro version. Added 200-iteration cap + major version gap guard. | Fixed v1.0.0 |
+| `device_tracker.py:196,211` | **TypeError**: `utcnow() - self._data["last-seen"]` crashes when `last-seen` is `False` (initial state). Added `isinstance` guard. | Fixed v1.0.0 |
+| `switch.py:149,171` | **KeyError**: `self._data["about"]` raises when field missing. Changed to `.get("about", "")`. | Fixed v1.0.0 |
+| `button.py:60` | **Blocking call in async**: `self.coordinator.api.run_script()` → `async_add_executor_job`. | Fixed v1.0.0 |
 
-## Known bugs — medium priority
+## Release history
+
+| Version | Date | Notes |
+|---------|------|-------|
+| v1.0.0 | 2026-04-30 | Initial independent release: 7 critical fixes, HA 2024.6+ compat, optimizations |
+| v1.0.1 | 2026-04-30 | Fix librouteros v4 API compatibility (login_methods removed) |
+| v1.0.2 | 2026-04-30 | Fix OptionsFlow config_entry property conflict in HA 2026.4 |
+
+## Known bugs — medium priority (all fixed in v1.0.0)
 
 | File | Issue |
 |------|-------|
@@ -147,9 +163,31 @@ pytest
 
 ## Development workflow
 
-- **Main branch**: `master` (sync with upstream `tomaae/homeassistant-mikrotik_router`)
-- **Dev branch**: Create feature/fix branches off `master`
-- **Testing**: No test suite exists yet. Test manually against a real RouterOS device via HA dev container or HACS local install
+- **Main branch**: `master` — independent development (no sync with upstream)
+- **Dev branch**: `dev/ngoviet-fixes` — feature/fix branches merged via PR
+- **Testing**: Manual test via `python` script on dev machine, then via HA API curl commands. Target HA: 192.168.10.15
 - **CI**: Runs on push/PR to `custom_components/**` — black, flake8, bandit, hassfest, SonarCloud
-- **Releases**: GitHub release triggers `release.yml` — zips `custom_components/mikrotik_router/` and uploads as release asset
-- **HACS**: Validated daily via `hacs.yml` workflow
+- **Releases**: `gh release create vX.Y.Z --target master` triggers `release.yml` — zips and uploads `mikrotik_router.zip`
+- **HACS**: Users add custom repo `https://github.com/ngoviet/mikrotik-ha`
+- **Local files**: `CLAUDE.md` is committed; progress notes saved to `D:\Code\mikrotik-ha\PROGRESS.md` (gitignored)
+
+## Testing commands
+
+```bash
+# Test MikroTik API connection
+python -c "
+from librouteros import connect
+api = connect(host='192.168.10.1', username='admin', password='Qweszxc.12', port=8511)
+print(list(api.path('/system/identity')))
+api.close()
+"
+
+# Test config flow
+python -c "
+from custom_components.mikrotik_router.config_flow import MikrotikControllerOptionsFlowHandler
+# ... (see PROGRESS.md for full test script)
+"
+
+# HA API test
+curl -s -H 'Authorization: Bearer <TOKEN>' 'http://192.168.10.15:8123/api/'
+```
