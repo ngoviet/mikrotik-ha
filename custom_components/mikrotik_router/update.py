@@ -142,8 +142,8 @@ class MikrotikRouterBoardFWUpdate(MikrotikEntity, UpdateEntity):
     def is_on(self) -> bool:
         """Return true if device is on."""
         return (
-            self.data["routerboard"]["current-firmware"]
-            != self.data["routerboard"]["upgrade-firmware"]
+            self.coordinator.data["routerboard"]["current-firmware"]
+            != self.coordinator.data["routerboard"]["upgrade-firmware"]
         )
 
     @property
@@ -184,26 +184,30 @@ def generate_version_list(start_version: str, end_version: str) -> list:
     end = Version(end_version)
     versions = []
 
+    # Guard: if major versions differ by more than 1, only fetch end_version
+    if start.major < end.major - 1:
+        return [str(end)]
+
     current = end
-    while current >= start:
+    max_iterations = 200
+    while current >= start and max_iterations > 0:
+        max_iterations -= 1
         versions.append(str(current))
-        current = decrement_version(current, start)
+        if current == start:
+            break
+        current = decrement_version(current)
 
     return versions
 
 
-def decrement_version(version: Version, start_version: Version) -> Version:
-    """Decrement version by the smallest possible step without going below start_version."""
+def decrement_version(version: Version) -> Version:
+    """Decrement version by the smallest possible step."""
     if version.micro > 0:
         next_patch = version.micro - 1
         return Version(f"{version.major}.{version.minor}.{next_patch}")
     elif version.minor > 0:
         next_minor = version.minor - 1
-        return Version(
-            f"{version.major}.{next_minor}.999"
-        )  # Assuming .999 as max patch version
+        return Version(f"{version.major}.{next_minor}.999")
     else:
         next_major = version.major - 1
-        return Version(
-            f"{next_major}.999.999"
-        )  # Assuming .999 as max minor and patch version
+        return Version(f"{next_major}.999.999")

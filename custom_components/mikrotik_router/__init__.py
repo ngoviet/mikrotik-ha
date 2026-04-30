@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-import voluptuous as vol
 import logging
 
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry
 from homeassistant.config_entries import ConfigEntry
 
@@ -14,10 +12,6 @@ from homeassistant.const import CONF_VERIFY_SSL
 
 from .const import PLATFORMS, DOMAIN, DEFAULT_VERIFY_SSL
 from .coordinator import MikrotikData, MikrotikCoordinator, MikrotikTrackerCoordinator
-
-SCRIPT_SCHEMA = vol.Schema(
-    {vol.Required("router"): cv.string, vol.Required("script"): cv.string}
-)
 
 _LOGGER = logging.getLogger(__name__)
 

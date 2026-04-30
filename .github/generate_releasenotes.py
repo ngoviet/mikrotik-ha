@@ -20,12 +20,15 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+import os
 import re
 import sys
 from github import Github
 
+REPO_NAME = os.environ.get("GITHUB_REPOSITORY", "ngoviet/mikrotik-ha")
+
 BODY = """
-[![Downloads for this release](https://img.shields.io/github/downloads/tomaae/homeassistant-mikrotik_router/{version}/total.svg)](https://github.com/tomaae/homeassistant-mikrotik_router/releases/{version})
+[![Downloads for this release](https://img.shields.io/github/downloads/{repo}/{version}/total.svg)](https://github.com/{repo}/releases/{version})
 
 {changes}
 """
@@ -58,7 +61,7 @@ def new_commits(repo, sha):
 
 def last_integration_release(github, skip=True):
     """Return last release."""
-    repo = github.get_repo("tomaae/homeassistant-mikrotik_router")
+    repo = github.get_repo("REPO_NAME")
     tag_sha = None
     data = {}
     tags = list(repo.get_tags())
@@ -79,7 +82,7 @@ def last_integration_release(github, skip=True):
 
 def get_integration_commits(github, skip=True):
     changes = ""
-    repo = github.get_repo("tomaae/homeassistant-mikrotik_router")
+    repo = github.get_repo("REPO_NAME")
     commits = new_commits(repo, last_integration_release(github, skip)["tag_sha"])
 
     if not commits:
@@ -114,13 +117,14 @@ def get_integration_commits(github, skip=True):
 
 # Update release notes:
 UPDATERELEASE = str(sys.argv[4])
-REPO = GITHUB.get_repo("tomaae/homeassistant-mikrotik_router")
+REPO = GITHUB.get_repo(REPO_NAME)
 if UPDATERELEASE == "yes":
     VERSION = str(sys.argv[6]).replace("refs/tags/", "")
     RELEASE = REPO.get_release(VERSION)
     RELEASE.update_release(
         name=f"Mikrotik Router {VERSION}",
         message=BODY.format(
+            repo=REPO_NAME,
             version=VERSION,
             changes=CHANGES.format(
                 integration_changes=get_integration_commits(GITHUB),
@@ -135,7 +139,7 @@ else:
         REPO.create_issue(
             title=f"Create release {VERSION}?",
             labels=["New release"],
-            assignee="tomaae",
+            assignee="ngoviet",
             body=CHANGES.format(
                 integration_changes=integration_changes,
             ),

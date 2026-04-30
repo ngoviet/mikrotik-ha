@@ -3,8 +3,7 @@
 import logging
 import ssl
 from time import time
-from threading import Lock
-from voluptuous import Optional
+from threading import RLock
 from .const import (
     DEFAULT_LOGIN_METHOD,
     DEFAULT_ENCODING,
@@ -42,7 +41,7 @@ class MikrotikAPI:
         self._login_method = login_method
         self._encoding = encoding
         self._ssl_wrapper = None
-        self.lock = Lock()
+        self.lock = RLock()
 
         self._connection = None
         self._connected = False
@@ -184,7 +183,7 @@ class MikrotikAPI:
     # ---------------------------
     #   query
     # ---------------------------
-    def query(self, path, command=None, args=None, return_list=True) -> Optional(list):
+    def query(self, path, command=None, args=None, return_list=True) -> list | None:
         """Retrieve data from Mikrotik API."""
         """Returns generator object, unless return_list passed as True"""
         if path == "/system/health" and self.disable_health:
@@ -412,7 +411,7 @@ class MikrotikAPI:
     def _current_milliseconds():
         return int(round(time() * 1000))
 
-    def is_accounting_and_local_traffic_enabled(self) -> (bool, bool):
+    def is_accounting_and_local_traffic_enabled(self) -> tuple[bool, bool]:
         # Returns:
         #   1st bool: Is accounting enabled
         #   2nd bool: Is account-local-traffic enabled

@@ -6,9 +6,7 @@ from dataclasses import dataclass, field
 from typing import List
 
 from homeassistant.helpers.device_registry import CONNECTION_NETWORK_MAC
-from homeassistant.components.switch import (
-    SwitchEntityDescription,
-)
+from homeassistant.helpers.entity import EntityDescription
 
 DEVICE_ATTRIBUTES_HOST = [
     "interface",
@@ -24,7 +22,7 @@ DEVICE_ATTRIBUTES_HOST = [
 
 
 @dataclass
-class MikrotikDeviceTrackerEntityDescription(SwitchEntityDescription):
+class MikrotikDeviceTrackerEntityDescription(EntityDescription):
     """Class describing mikrotik entities."""
 
     key: str | None = None

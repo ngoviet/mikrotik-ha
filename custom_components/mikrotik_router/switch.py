@@ -10,8 +10,6 @@ from homeassistant.components.switch import SwitchEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.restore_state import RestoreEntity
-
 from .entity import MikrotikEntity, async_add_entities
 from .helper import format_attribute
 from .switch_types import (
@@ -49,7 +47,7 @@ async def async_setup_entry(
 # ---------------------------
 #   MikrotikSwitch
 # ---------------------------
-class MikrotikSwitch(MikrotikEntity, SwitchEntity, RestoreEntity):
+class MikrotikSwitch(MikrotikEntity, SwitchEntity):
     """Representation of a switch."""
 
     @property
@@ -146,10 +144,10 @@ class MikrotikPortSwitch(MikrotikSwitch):
 
         path = self.entity_description.data_switch_path
         param = self.entity_description.data_reference
-        if self._data["about"] == "managed by CAPsMAN":
+        if self._data.get("about") == "managed by CAPsMAN":
             _LOGGER.error("Unable to enable %s, managed by CAPsMAN", self._data[param])
             return "managed by CAPsMAN"
-        if "-" in self._data["port-mac-address"]:
+        if "-" in self._data.get("port-mac-address", ""):
             param = "name"
         value = self._data[self.entity_description.data_reference]
         mod_param = self.entity_description.data_switch_parameter
@@ -168,10 +166,10 @@ class MikrotikPortSwitch(MikrotikSwitch):
 
         path = self.entity_description.data_switch_path
         param = self.entity_description.data_reference
-        if self._data["about"] == "managed by CAPsMAN":
+        if self._data.get("about") == "managed by CAPsMAN":
             _LOGGER.error("Unable to disable %s, managed by CAPsMAN", self._data[param])
             return "managed by CAPsMAN"
-        if "-" in self._data["port-mac-address"]:
+        if "-" in self._data.get("port-mac-address", ""):
             param = "name"
         value = self._data[self.entity_description.data_reference]
         mod_param = self.entity_description.data_switch_parameter

@@ -224,11 +224,6 @@ class MikrotikEntity(CoordinatorEntity[_MikrotikCoordinatorT], Entity):
         else:
             return f"{self._inst.lower()}-{self.entity_description.key}"
 
-    # @property
-    # def available(self) -> bool:
-    #     """Return if controller is available"""
-    #     return self.coordinator.connected()
-
     @property
     def device_info(self) -> DeviceInfo:
         """Return a description for device registry."""
@@ -277,8 +272,8 @@ class MikrotikEntity(CoordinatorEntity[_MikrotikCoordinatorT], Entity):
 
             return DeviceInfo(
                 connections={(dev_connection, f"{dev_connection_value}")},
-                default_name=f"{dev_group}",
-                default_manufacturer=f"{dev_manufacturer}",
+                name=f"{dev_group}",
+                manufacturer=f"{dev_manufacturer}",
                 via_device=(
                     DOMAIN,
                     f"{self.coordinator.data['routerboard']['serial-number']}",
@@ -287,9 +282,9 @@ class MikrotikEntity(CoordinatorEntity[_MikrotikCoordinatorT], Entity):
         else:
             return DeviceInfo(
                 connections={(dev_connection, f"{dev_connection_value}")},
-                default_name=f"{self._inst} {dev_group}",
-                default_model=f"{self.coordinator.data['resource']['board-name']}",
-                default_manufacturer=f"{self.coordinator.data['resource']['platform']}",
+                name=f"{self._inst} {dev_group}",
+                model=f"{self.coordinator.data['resource']['board-name']}",
+                manufacturer=f"{self.coordinator.data['resource']['platform']}",
                 via_device=(
                     DOMAIN,
                     f"{self.coordinator.data['routerboard']['serial-number']}",
@@ -305,19 +300,3 @@ class MikrotikEntity(CoordinatorEntity[_MikrotikCoordinatorT], Entity):
                 attributes[format_attribute(variable)] = self._data[variable]
 
         return attributes
-
-    async def start(self):
-        """Dummy run function"""
-        raise NotImplementedError()
-
-    async def stop(self):
-        """Dummy stop function"""
-        raise NotImplementedError()
-
-    async def restart(self):
-        """Dummy restart function"""
-        raise NotImplementedError()
-
-    async def reload(self):
-        """Dummy reload function"""
-        raise NotImplementedError()

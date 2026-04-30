@@ -5,9 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import List
 
-from homeassistant.components.sensor import (
-    SensorEntityDescription,
-)
+from homeassistant.components.button import ButtonEntityDescription
 
 from .const import DOMAIN
 
@@ -18,7 +16,7 @@ DEVICE_ATTRIBUTES_SCRIPT = [
 
 
 @dataclass
-class MikrotikButtonEntityDescription(SensorEntityDescription):
+class MikrotikButtonEntityDescription(ButtonEntityDescription):
     """Class describing mikrotik entities."""
 
     ha_group: str | None = None
