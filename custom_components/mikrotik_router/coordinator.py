@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import ipaddress
 import logging
 import re
-import pytz
-
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass
 from ipaddress import ip_address, IPv4Network
 from mac_vendor_lookup import AsyncMacLookup
@@ -69,8 +68,6 @@ from .mikrotikapi import MikrotikAPI
 
 _LOGGER = logging.getLogger(__name__)
 
-DEFAULT_TIME_ZONE = None
-
 
 def is_valid_ip(address):
     try:
@@ -82,17 +79,7 @@ def is_valid_ip(address):
 
 def utc_from_timestamp(timestamp: float) -> datetime:
     """Return a UTC time from a timestamp."""
-    return pytz.utc.localize(datetime.utcfromtimestamp(timestamp))
-
-
-def as_local(dattim: datetime) -> datetime:
-    """Convert a UTC datetime object to local time zone."""
-    if dattim.tzinfo == DEFAULT_TIME_ZONE:
-        return dattim
-    if dattim.tzinfo is None:
-        dattim = pytz.utc.localize(dattim)
-
-    return dattim.astimezone(DEFAULT_TIME_ZONE)
+    return datetime.fromtimestamp(timestamp, tz=timezone.utc)
 
 
 @dataclass
@@ -152,56 +139,58 @@ class MikrotikTrackerCoordinator(DataUpdateCoordinator[None]):
         if "test" not in self.coordinator.ds["access"]:
             return
 
-        for uid in list(self.coordinator.ds["host"]):
-            if not self.coordinator.host_tracking_initialized:
-                # Add missing default values
-                for key, default in zip(
-                    [
-                        "address",
-                        "mac-address",
-                        "interface",
-                        "host-name",
-                        "last-seen",
-                        "available",
-                    ],
-                    ["unknown", "unknown", "unknown", "unknown", False, False],
-                ):
-                    if key not in self.coordinator.ds["host"][uid]:
-                        self.coordinator.ds["host"][uid][key] = default
+        async with self.coordinator.host_lock:
+            for uid in list(self.coordinator.ds["host"]):
+                if not self.coordinator.host_tracking_initialized:
+                    # Add missing default values
+                    for key, default in zip(
+                        [
+                            "address",
+                            "mac-address",
+                            "interface",
+                            "host-name",
+                            "last-seen",
+                            "available",
+                        ],
+                        ["unknown", "unknown", "unknown", "unknown", False, False],
+                    ):
+                        if key not in self.coordinator.ds["host"][uid]:
+                            self.coordinator.ds["host"][uid][key] = default
 
-            # Check host availability
-            if (
-                self.coordinator.ds["host"][uid]["source"]
-                not in ["capsman", "wireless"]
-                and self.coordinator.ds["host"][uid]["address"] not in ["unknown", ""]
-                and self.coordinator.ds["host"][uid]["interface"] not in ["unknown", ""]
-            ):
-                tmp_interface = self.coordinator.ds["host"][uid]["interface"]
+                # Check host availability
                 if (
-                    uid in self.coordinator.ds["arp"]
-                    and self.coordinator.ds["arp"][uid]["bridge"] != ""
+                    self.coordinator.ds["host"][uid]["source"]
+                    not in ["capsman", "wireless"]
+                    and self.coordinator.ds["host"][uid]["address"] not in ["unknown", ""]
+                    and self.coordinator.ds["host"][uid]["interface"] not in ["unknown", ""]
                 ):
-                    tmp_interface = self.coordinator.ds["arp"][uid]["bridge"]
+                    tmp_interface = self.coordinator.ds["host"][uid]["interface"]
+                    if (
+                        uid in self.coordinator.ds["arp"]
+                        and self.coordinator.ds["arp"][uid]["bridge"] != ""
+                    ):
+                        tmp_interface = self.coordinator.ds["arp"][uid]["bridge"]
 
-                _LOGGER.debug(
-                    "Ping host: %s", self.coordinator.ds["host"][uid]["address"]
-                )
-
-                self.coordinator.ds["host"][uid]["available"] = (
-                    await self.hass.async_add_executor_job(
-                        self.api.arp_ping,
-                        self.coordinator.ds["host"][uid]["address"],
-                        tmp_interface,
+                    _LOGGER.debug(
+                        "Ping host: %s", self.coordinator.ds["host"][uid]["address"]
                     )
-                )
 
-            # Update last seen
-            if self.coordinator.ds["host"][uid]["available"]:
-                self.coordinator.ds["host"][uid]["last-seen"] = utcnow()
+                    self.coordinator.ds["host"][uid]["available"] = (
+                        await self.hass.async_add_executor_job(
+                            self.api.arp_ping,
+                            self.coordinator.ds["host"][uid]["address"],
+                            tmp_interface,
+                        )
+                    )
+
+                # Update last seen
+                if self.coordinator.ds["host"][uid]["available"]:
+                    self.coordinator.ds["host"][uid]["last-seen"] = utcnow()
 
         self.coordinator.host_tracking_initialized = True
 
-        await self.coordinator.async_process_host()
+        async with self.coordinator.host_lock:
+            await self.coordinator.async_process_host()
         return {
             "host": self.coordinator.ds["host"],
             "routerboard": self.coordinator.ds["routerboard"],
@@ -276,6 +265,8 @@ class MikrotikCoordinator(DataUpdateCoordinator[None]):
             config_entry.data[CONF_SSL],
             config_entry.data[CONF_VERIFY_SSL],
         )
+
+        self.host_lock = asyncio.Lock()
 
         self.debug = False
         if _LOGGER.getEffectiveLevel() == 10:
@@ -610,31 +601,35 @@ class MikrotikCoordinator(DataUpdateCoordinator[None]):
         if self.api.connected():
             await self.hass.async_add_executor_job(self.get_interface)
 
-        if self.api.connected() and not self.ds["host_hass"]:
-            await self.async_get_host_hass()
+        if self.api.connected() and self.option_track_network_hosts:
+            if not self.ds["host_hass"]:
+                await self.async_get_host_hass()
 
-        if self.api.connected() and self.support_capsman:
+        if self.api.connected() and self.support_capsman and self.option_track_network_hosts:
             await self.hass.async_add_executor_job(self.get_capsman_hosts)
 
         if self.api.connected() and self.support_wireless:
             await self.hass.async_add_executor_job(self.get_wireless)
 
-        if self.api.connected() and self.support_wireless:
+        if self.api.connected() and self.support_wireless and self.option_track_network_hosts:
             await self.hass.async_add_executor_job(self.get_wireless_hosts)
 
-        if self.api.connected():
+        if self.api.connected() and self.option_track_network_hosts:
             await self.hass.async_add_executor_job(self.get_bridge)
 
-        if self.api.connected():
+        if self.api.connected() and self.option_track_network_hosts:
             await self.hass.async_add_executor_job(self.get_arp)
 
-        if self.api.connected():
+        if self.api.connected() and (
+            self.option_track_network_hosts or self.option_track_iface_clients
+        ):
             await self.hass.async_add_executor_job(self.get_dhcp)
 
-        if self.api.connected():
-            await self.async_process_host()
+        if self.api.connected() and self.option_track_network_hosts:
+            async with self.host_lock:
+                await self.async_process_host()
 
-        if self.api.connected():
+        if self.api.connected() and self.option_track_iface_clients:
             await self.hass.async_add_executor_job(self.process_interface_client)
 
         if self.api.connected() and self.option_sensor_nat:
@@ -1418,26 +1413,11 @@ class MikrotikCoordinator(DataUpdateCoordinator[None]):
                 ],
             )
 
-            if (
-                "write" not in self.ds["access"]
-                or "policy" not in self.ds["access"]
-                or "reboot" not in self.ds["access"]
-            ):
-                self.ds["routerboard"].pop("current-firmware")
-                self.ds["routerboard"].pop("upgrade-firmware")
-
     # ---------------------------
     #   get_system_health
     # ---------------------------
     def get_system_health(self) -> None:
-        """Get routerboard data from Mikrotik"""
-        if (
-            "write" not in self.ds["access"]
-            or "policy" not in self.ds["access"]
-            or "reboot" not in self.ds["access"]
-        ):
-            return
-
+        """Get health data from Mikrotik."""
         if 0 < self.major_fw_version < 7:
             self.ds["health"] = parse_api(
                 data=self.ds["health"],
@@ -1568,15 +1548,13 @@ class MikrotikCoordinator(DataUpdateCoordinator[None]):
     def get_firmware_update(self) -> None:
         """Check for firmware update on Mikrotik"""
         if (
-            "write" not in self.ds["access"]
-            or "policy" not in self.ds["access"]
-            or "reboot" not in self.ds["access"]
+            "write" in self.ds["access"]
+            and "reboot" in self.ds["access"]
         ):
-            return
+            self.execute(
+                "/system/package/update", "check-for-updates", None, None, {"duration": 10}
+            )
 
-        self.execute(
-            "/system/package/update", "check-for-updates", None, None, {"duration": 10}
-        )
         self.ds["fw-update"] = parse_api(
             data=self.ds["fw-update"],
             source=self.api.query("/system/package/update"),

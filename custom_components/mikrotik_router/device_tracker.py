@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from logging import getLogger
 from collections.abc import Mapping
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any, Callable
 
 from homeassistant.components.device_tracker.config_entry import ScannerEntity
@@ -190,9 +190,11 @@ class MikrotikHostDeviceTracker(MikrotikDeviceTracker):
         if self._data["source"] in ["capsman", "wireless"]:
             return self._data[self.entity_description.data_attribute]
 
-        return bool(
-            self._data["last-seen"]
-            and utcnow() - self._data["last-seen"]
+        if not isinstance(self._data["last-seen"], datetime):
+            return False
+
+        return (
+            utcnow() - self._data["last-seen"]
             < self.option_track_network_hosts_timeout
         )
 
@@ -205,11 +207,9 @@ class MikrotikHostDeviceTracker(MikrotikDeviceTracker):
             else:
                 return self.entity_description.icon_disabled
 
-        if (
-            self._data["last-seen"]
-            and (utcnow() - self._data["last-seen"])
-            < self.option_track_network_hosts_timeout
-        ):
+        if isinstance(self._data["last-seen"], datetime) and (
+            utcnow() - self._data["last-seen"]
+        ) < self.option_track_network_hosts_timeout:
             return self.entity_description.icon_enabled
         return self.entity_description.icon_disabled
 
